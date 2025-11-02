@@ -28,14 +28,14 @@ case "$1" in
     start)
         start_or_run
         ;;
-    stomp)
+    start-stomp)
         stomp_or_run
         ;;
     stop)
         echo "Stopping Peril RabbitMQ container..."
         docker stop peril_rabbitmq
         ;;
-    stompstop)
+    stop-stomp)
         echo "Stopping Stomp RabbitMQ container..."
         docker stop rabbitmq_stomp
         ;;
@@ -43,7 +43,11 @@ case "$1" in
         echo "Fetching logs for Peril RabbitMQ container..."
         docker logs -f peril_rabbitmq
         ;;
+    stomp-logs)
+        echo "Fetching logs for Peril RabbitMQ container..."
+        docker logs -f rabbitmq_stomp
+        ;;
     *)
-        echo "Usage: $0 {start|stop|logs}"
+        echo "Usage: $0 {start|stop|logs|start-stomp|stop-stomp|stomp-logs}"
         exit 1
 esac
