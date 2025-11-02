@@ -12,13 +12,32 @@ start_or_run () {
     fi
 }
 
+stomp_or_run () {
+    docker inspect rabbitmq_stomp > /dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+        echo "Starting Stomp RabbitMQ container..."
+        docker start rabbitmq_stomp
+    else
+        echo "Stomp RabbitMQ container not found, creating a new one..."
+        docker run -d --name rabbitmq_stomp -p 5672:5672 -p 15672:15672 -p 61613:61613 rabbitmq-stomp
+    fi
+}
+
 case "$1" in
     start)
         start_or_run
         ;;
+    stomp)
+        stomp_or_run
+        ;;
     stop)
         echo "Stopping Peril RabbitMQ container..."
         docker stop peril_rabbitmq
+        ;;
+    stompstop)
+        echo "Stopping Stomp RabbitMQ container..."
+        docker stop rabbitmq_stomp
         ;;
     logs)
         echo "Fetching logs for Peril RabbitMQ container..."
