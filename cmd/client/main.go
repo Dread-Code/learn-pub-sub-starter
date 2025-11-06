@@ -30,9 +30,37 @@ func main() {
 
 	queueKey := fmt.Sprintf("%s.%s", routing.PauseKey, username)
 	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, queueKey, routing.PauseKey, pubsub.TRANSIENT)
+
+	gameState := gamelogic.NewGameState(username)
+repl:
+	for {
+		command := gamelogic.GetInput()
+		if command == nil {
+			continue
+		}
+		switch command[0] {
+		case "spawn":
+			gameState.CommandSpawn(command)
+		case "move":
+			gameState.CommandMove(command)
+		case "status":
+			gameState.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			break repl
+		default:
+			fmt.Println("Command not found read the fucking manuel dumb...")
+		}
+	}
+
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
