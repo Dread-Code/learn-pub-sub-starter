@@ -29,7 +29,6 @@ func main() {
 
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
 	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routingKey, pubsub.DURABLE)
-	gamelogic.PrintServerHelp()
 repl:
 	for {
 		command := gamelogic.GetInput()
@@ -46,6 +45,8 @@ repl:
 		case "quit":
 			fmt.Println("Closing the game...")
 			break repl
+		case "help":
+			gamelogic.PrintServerHelp()
 		default:
 			fmt.Println("Command not found read the fucking manuel dumb...")
 		}
