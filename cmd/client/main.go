@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -21,20 +22,74 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.Ack
 		return pubsub.Ack
 	}
 }
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
-
+func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyMove) pubsub.AckType {
 	return func(arm gamelogic.ArmyMove) pubsub.AckType {
 		defer fmt.Print("> ")
 		moveOutcome := gs.HandleMove(arm)
-
+		fmt.Println("handlermove return", moveOutcome)
 		switch moveOutcome {
-		case gamelogic.MoveOutComeSafe, gamelogic.MoveOutcomeMakeWar:
+		case gamelogic.MoveOutComeSafe:
+			return pubsub.Ack
+		case gamelogic.MoveOutcomeMakeWar:
+			username := gs.GetUsername()
+			units := gs.Player.Units
+			row := gamelogic.RecognitionOfWar{Attacker: arm.Player, Defender: gamelogic.Player{Username: username, Units: units}}
+			warKey := fmt.Sprintf("%s.%s", routing.WarRecognitionsPrefix, username)
+			err := pubsub.PublishJSON(ch, routing.ExchangePerilTopic, warKey, row)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		default:
 			return pubsub.NackDiscard
 		}
 	}
 }
+
+func PublishGameLog(ch *amqp.Channel, username string, msg string) pubsub.AckType {
+	gameLogKey := fmt.Sprintf("%s.%s", routing.GameLogSlug, username)
+	gl := routing.GameLog{
+		Message:     msg,
+		Username:    username,
+		CurrentTime: time.Now(),
+	}
+
+	err := pubsub.PublishGob(ch, routing.ExchangePerilTopic, gameLogKey, gl)
+	if err != nil {
+		return pubsub.NackRequeue
+	}
+	fmt.Println("Publishin gamelog...")
+	return pubsub.Ack
+}
+
+func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+	return func(row gamelogic.RecognitionOfWar) pubsub.AckType {
+		defer fmt.Print("> ")
+		outcome, winner, losser := gs.HandleWar(row)
+		fmt.Println("handlerwar return", outcome, winner, losser)
+		username := gs.GetUsername()
+		var log string
+		switch outcome {
+		case gamelogic.WarOutcomeNotInvolved:
+			return pubsub.NackRequeue
+		case gamelogic.WarOutcomeNoUnits:
+			return pubsub.NackDiscard
+		case gamelogic.WarOutcomeOpponentWon:
+			log = fmt.Sprintf("{%s} won a war against {%s}", winner, losser)
+			return PublishGameLog(ch, username, log)
+		case gamelogic.WarOutcomeYouWon:
+			log = fmt.Sprintf("{%s} won a war against {%s}", winner, losser)
+			return PublishGameLog(ch, username, log)
+		case gamelogic.WarOutcomeDraw:
+			log = fmt.Sprintf("A war between {%s} and {%s} resulted in a draw", winner, losser)
+			return PublishGameLog(ch, username, log)
+		default:
+			fmt.Println("An error occur")
+			return pubsub.NackDiscard
+		}
+	}
+}
+
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
 	conn, err := amqp.Dial(url)
@@ -65,9 +120,13 @@ func main() {
 
 	armyMovesKey := fmt.Sprintf("%s.%s", routing.ArmyMovesKey, username)
 	armyMovesRoutingKey := fmt.Sprintf("%s.*", routing.ArmyMovesKey)
-	hm := handlerMove(gameState)
+	hm := handlerMove(gameState, ch)
 	pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, armyMovesKey, armyMovesRoutingKey, pubsub.TRANSIENT, hm)
 
+	hw := handlerWar(gameState, ch)
+	warKey := "war"
+	warRoutingKey := fmt.Sprintf("%s.*", warKey)
+	pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, warKey, warRoutingKey, pubsub.DURABLE, hw)
 repl:
 	for {
 		command := gamelogic.GetInput()

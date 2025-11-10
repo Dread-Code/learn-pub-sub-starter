@@ -1,11 +1,14 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -18,6 +21,25 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	msg := amqp.Publishing{
 		ContentType: "application/json",
 		Body:        data,
+	}
+	err = ch.PublishWithContext(ctx, exchange, key, false, false, msg)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	buf := &bytes.Buffer{}
+	encoder := gob.NewEncoder(buf)
+	err := encoder.Encode(val)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	msg := amqp.Publishing{
+		ContentType: "application/json",
+		Body:        buf.Bytes(),
 	}
 	err = ch.PublishWithContext(ctx, exchange, key, false, false, msg)
 	if err != nil {
@@ -53,12 +75,14 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, err
 	}
 
+	amqpTable := amqp.Table{routing.DeadLetterKey: routing.ExchangeDeadLetter}
+
 	var queue amqp.Queue
 	if queueType == DURABLE {
-		queue, err = ch.QueueDeclare(queueName, true, false, false, false, nil)
+		queue, err = ch.QueueDeclare(queueName, true, false, false, false, amqpTable)
 	}
 	if queueType == TRANSIENT {
-		queue, err = ch.QueueDeclare(queueName, false, true, true, false, nil)
+		queue, err = ch.QueueDeclare(queueName, false, true, true, false, amqpTable)
 	}
 	if err != nil {
 		return nil, amqp.Queue{}, err
@@ -101,13 +125,10 @@ func SubscribeJSON[T any](
 			switch ackType {
 			case Ack:
 				message.Ack(false)
-				fmt.Println("Ack")
 			case NackRequeue:
 				message.Nack(false, true)
-				fmt.Println("Nack reueue")
 			default:
 				message.Nack(false, false)
-				fmt.Println("Nack discard")
 			}
 		}
 	}()
