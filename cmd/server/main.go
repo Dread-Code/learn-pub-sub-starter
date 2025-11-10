@@ -13,6 +13,14 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func handlerGameLogs() func(routing.GameLog) pubsub.AckType {
+	return func(gl routing.GameLog) pubsub.AckType {
+		defer fmt.Print("> ")
+		gamelogic.WriteLog(gl)
+		return pubsub.Ack
+	}
+}
+
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
 	conn, err := amqp.Dial(url)
@@ -28,7 +36,9 @@ func main() {
 	}
 
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
-	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routingKey, pubsub.DURABLE)
+	hgl := handlerGameLogs()
+	err = pubsub.SubscribeGob(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routingKey, pubsub.DURABLE, hgl)
+	fmt.Println(err)
 repl:
 	for {
 		command := gamelogic.GetInput()

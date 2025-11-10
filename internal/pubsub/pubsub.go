@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
 	"log"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
@@ -38,7 +37,7 @@ func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	}
 	ctx := context.Background()
 	msg := amqp.Publishing{
-		ContentType: "application/json",
+		ContentType: "application/gob",
 		Body:        buf.Bytes(),
 	}
 	err = ch.PublishWithContext(ctx, exchange, key, false, false, msg)
@@ -93,6 +92,49 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, err
 	}
 	return ch, queue, nil
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
+	handler func(T) AckType,
+) error {
+	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+	deliveryChan, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for message := range deliveryChan {
+			var msg T
+			buf := bytes.NewReader(message.Body)
+			decoder := gob.NewDecoder(buf)
+			err := decoder.Decode(&msg)
+			if err != nil {
+				log.Printf("subscribe: unmarshal failed for queue %s: %v", queue.Name, err)
+				message.Nack(false, false)
+				continue
+			}
+			ackType := handler(msg)
+
+			switch ackType {
+			case Ack:
+				message.Ack(false)
+			case NackRequeue:
+				message.Nack(false, true)
+			default:
+				message.Nack(false, false)
+			}
+		}
+	}()
+
+	return nil
 }
 
 func SubscribeJSON[T any](
