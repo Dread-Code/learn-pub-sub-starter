@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -26,7 +27,6 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 	return func(arm gamelogic.ArmyMove) pubsub.AckType {
 		defer fmt.Print("> ")
 		moveOutcome := gs.HandleMove(arm)
-		fmt.Println("handlermove return", moveOutcome)
 		switch moveOutcome {
 		case gamelogic.MoveOutComeSafe:
 			return pubsub.Ack
@@ -58,7 +58,6 @@ func PublishGameLog(ch *amqp.Channel, username string, msg string) pubsub.AckTyp
 	if err != nil {
 		return pubsub.NackRequeue
 	}
-	fmt.Println("Publishin gamelog...")
 	return pubsub.Ack
 }
 
@@ -66,7 +65,6 @@ func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.Recogn
 	return func(row gamelogic.RecognitionOfWar) pubsub.AckType {
 		defer fmt.Print("> ")
 		outcome, winner, losser := gs.HandleWar(row)
-		fmt.Println("handlerwar return", outcome, winner, losser)
 		username := gs.GetUsername()
 		var log string
 		switch outcome {
@@ -149,7 +147,19 @@ repl:
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(command) < 2 {
+				fmt.Println("Did you forget writting the second argument pussy?")
+			}
+			num, err := strconv.ParseInt(command[1], 10, 64)
+			if err != err {
+				fmt.Println(err)
+				continue
+			}
+			for range num {
+				log := gamelogic.GetMaliciousLog()
+				PublishGameLog(ch, username, log)
+			}
+
 		case "quit":
 			gamelogic.PrintQuit()
 			break repl
